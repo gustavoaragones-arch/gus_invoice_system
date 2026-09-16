@@ -1,0 +1,507 @@
+// Canadian Private Billing System — Phase 3 executable data model.
+//
+// This file is the direct translation of the approved Phase 2 conceptual
+// data model (docs/phase-2/04-data-model.md, 05-entity-field-specification.md)
+// into an executable Prisma/PostgreSQL schema. It implements the 16
+// approved entities and nothing else (Section 5 of the Phase 3 brief).
+//
+// Constraints that Prisma's schema language cannot express directly
+// (CHECK constraints, partial unique indexes, RLS policies, the audit
+// append-only trigger) are added via a hand-written follow-up migration —
+// see prisma/migrations/**/migration.sql and docs/phase-3.
+//
+// Money fields use PostgreSQL NUMERIC via Prisma's Decimal type — never
+// floating point (Section 8 of the Phase 3 brief).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────
+
+enum InvoiceStatus {
+  DRAFT
+  FINALIZED
+  VOID
+
+  @@map("invoice_status")
+}
+
+enum Provenance {
+  SYSTEM_CREATED
+  HISTORICAL_IMPORT
+
+  @@map("provenance")
+}
+
+enum TaxStatus {
+  TAXABLE
+  ZERO_RATED
+  EXEMPT
+
+  @@map("tax_status")
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("client_status")
+}
+
+enum ServiceStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("service_status")
+}
+
+enum WorkCandidateReviewState {
+  PENDING
+  EDITED
+  APPROVED
+  REJECTED
+
+  @@map("work_candidate_review_state")
+}
+
+// Phase 0 CAL-CONF-001 / Phase 2 §12: the confidence *display* model is
+// explicitly UNRESOLVED. This enum is the narrowest architecture-compatible
+// placeholder (a match either happened or it didn't) — it must not be read
+// as a decision about a scored/tiered confidence model. See DEC-ARCH-024.
+enum MatchConfidence {
+  MATCHED
+  UNMATCHED
+
+  @@map("match_confidence")
+}
+
+enum SendAttemptStatus {
+  SUCCESS
+  FAILURE
+
+  @@map("send_attempt_status")
+}
+
+enum CalendarConnectionStatus {
+  ACTIVE
+  DISCONNECTED
+
+  @@map("calendar_connection_status")
+}
+
+// The 14 audit event types required by Phase 1 §10 / Phase 2 §11.
+enum AuditEventType {
+  INVOICE_CREATED
+  INVOICE_FINALIZED
+  INVOICE_SEND_ATTEMPTED
+  INVOICE_VOIDED
+  REPLACEMENT_INVOICE_CREATED
+  PAYMENT_RECORDED
+  PAYMENT_REVERSED
+  PAYMENT_METHOD_NOTE_CORRECTED
+  TAX_CONFIGURATION_CHANGED
+  BUSINESS_SETTINGS_CHANGED
+  WORK_CANDIDATE_APPROVED
+  WORK_CANDIDATE_REJECTED
+  WORK_CANDIDATE_EDITED
+  CALENDAR_CONNECTION_CHANGED
+
+  @@map("audit_event_type")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// User & Business
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The single authenticated owner (Phase 0 SEC-AUTHZ-001). In production
+/// `id` equals the Supabase Auth user id, so no separate identity mapping
+/// table is needed.
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  businesses   Business[]
+  auditEvents  AuditEvent[]
+
+  @@map("app_user")
+}
+
+/// One Canadian business profile (Business A, Business B, or a future
+/// profile). Phase 2 §04: "User 1 ─── N Business" — ownership is a direct,
+/// immutable foreign key rather than a membership table, matching the
+/// single-owner model while remaining extensible later (SEC-AUTHZ-002).
+model Business {
+  id                      String   @id @default(uuid()) @db.Uuid
+  ownerUserId             String   @map("owner_user_id") @db.Uuid
+  name                    String
+  legalName               String?  @map("legal_name")
+  address                 String?
+  gstHstRegistrationNumber String? @map("gst_hst_registration_number")
+  brandingLogoRef         String?  @map("branding_logo_ref")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  owner                   User                     @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+  clients                 Client[]
+  services                Service[]
+  invoices                Invoice[]
+  taxConfigurationVersions TaxConfigurationVersion[]
+  calendarConnections     CalendarConnection[]
+  workCandidates          WorkCandidate[]
+  auditEvents             AuditEvent[]
+
+  @@map("business")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Client & Service
+// ─────────────────────────────────────────────────────────────────────────
+
+model Client {
+  id             String       @id @default(uuid()) @db.Uuid
+  businessId     String       @map("business_id") @db.Uuid
+  name           String
+  billingAddress String?      @map("billing_address")
+  contactEmail   String?      @map("contact_email")
+  status         ClientStatus @default(ACTIVE)
+  provenance     Provenance   @default(SYSTEM_CREATED)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  invoices Invoice[]
+
+  @@index([businessId])
+  @@map("client")
+}
+
+model Service {
+  id          String        @id @default(uuid()) @db.Uuid
+  businessId  String        @map("business_id") @db.Uuid
+  description String
+  unit        String
+  defaultRate Decimal       @map("default_rate") @db.Decimal(12, 2)
+  taxStatus   TaxStatus?    @map("tax_status")
+  status      ServiceStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  business  Business          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  lineItems InvoiceLineItem[]
+
+  @@index([businessId])
+  @@map("service")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Invoice and its frozen children
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Central financial artifact. See docs/phase-2/06 and
+/// docs/phase-1/02, 04 for the full lifecycle/immutability rules this
+/// schema exists to support; enforcement of those rules is in
+/// src/server/domain, not in the schema alone.
+model Invoice {
+  id         String        @id @default(uuid()) @db.Uuid
+  businessId String        @map("business_id") @db.Uuid
+  clientId   String        @map("client_id") @db.Uuid
+  status     InvoiceStatus @default(DRAFT)
+
+  // Assigned only at finalization (DEC-INV-002 / INV-NUM-001/005).
+  invoiceNumber String? @map("invoice_number")
+  invoiceDate   DateTime? @map("invoice_date") @db.Date
+  dueDate       DateTime? @map("due_date") @db.Date
+
+  // Frozen financial totals — set at finalization, immutable thereafter.
+  preTaxSubtotal Decimal? @map("pre_tax_subtotal") @db.Decimal(12, 2)
+  totalTax       Decimal? @map("total_tax") @db.Decimal(12, 2)
+  invoiceTotal   Decimal? @map("invoice_total") @db.Decimal(12, 2)
+
+  paymentTerms String? @map("payment_terms")
+  notes        String?
+
+  provenance Provenance @default(SYSTEM_CREATED)
+
+  // Void + Replacement correction linkage (DEC-INV-008). `replacesInvoiceId`
+  // is set on the *replacement* invoice, pointing at the original (now
+  // Void) invoice it corrects. The inverse (`replacedBy`) is the original's
+  // view of its own replacement, if any.
+  replacesInvoiceId String?  @unique @map("replaces_invoice_id") @db.Uuid
+  replaces          Invoice? @relation("InvoiceReplacement", fields: [replacesInvoiceId], references: [id], onDelete: Restrict)
+  replacedBy        Invoice? @relation("InvoiceReplacement")
+
+  voidedAt   DateTime? @map("voided_at")
+  voidReason String?   @map("void_reason")
+  finalizedAt DateTime? @map("finalized_at")
+
+  // Historical-import support (DEC-HIST-004/007). Structure:
+  // { "<fieldName>": "unverified" }
+  fieldVerification Json? @map("field_verification")
+
+  // Frozen snapshots — authoritative for historical reproduction; must
+  // never be re-derived from the live Client/Business record once set
+  // (INV-IMM-005/006/007). Structure documented in
+  // src/server/domain/invoiceSnapshots.ts.
+  billedClientSnapshot   Json? @map("billed_client_snapshot")
+  billedBusinessSnapshot Json? @map("billed_business_snapshot")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  business  Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  lineItems    InvoiceLineItem[]
+  taxLines     InvoiceTaxLine[]
+  payments     Payment[]
+  sendAttempts InvoiceSendAttempt[]
+
+  @@unique([businessId, invoiceNumber])
+  @@index([businessId, status])
+  @@index([businessId, invoiceDate])
+  @@map("invoice")
+}
+
+model InvoiceLineItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  invoiceId   String    @map("invoice_id") @db.Uuid
+  lineOrder   Int       @map("line_order")
+  description String
+  quantity    Decimal   @db.Decimal(10, 2)
+  unitPrice   Decimal   @map("unit_price") @db.Decimal(12, 2)
+
+  // Computed by the domain layer whenever the line is created/edited
+  // (Draft only); frozen once the parent invoice is finalized.
+  lineSubtotal Decimal @map("line_subtotal") @db.Decimal(12, 2)
+
+  taxStatus   TaxStatus @map("tax_status")
+  // Assigned at finalization: "<taxAuthority>|<taxType>|<rate>" — must
+  // agree with the InvoiceTaxLine it was grouped into (INV-TAX-004).
+  taxGroupKey String?   @map("tax_group_key")
+
+  serviceId       String? @map("service_id") @db.Uuid
+  workCandidateId String? @map("work_candidate_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  invoice       Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service       Service?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  workCandidate WorkCandidate? @relation(fields: [workCandidateId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@map("invoice_line_item")
+}
+
+/// One frozen tax-group amount on a finalized invoice. Group identity is
+/// taxAuthority + taxType + rate (INV-TAX-004) — never a blended rate.
+model InvoiceTaxLine {
+  id               String  @id @default(uuid()) @db.Uuid
+  invoiceId        String  @map("invoice_id") @db.Uuid
+  taxAuthority     String  @map("tax_authority")
+  taxType          String  @map("tax_type")
+  rate             Decimal @db.Decimal(7, 5)
+  taxableSubtotal  Decimal @map("taxable_subtotal") @db.Decimal(12, 2)
+  taxAmount        Decimal @map("tax_amount") @db.Decimal(12, 2)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_tax_line")
+}
+
+model InvoiceSendAttempt {
+  id           String            @id @default(uuid()) @db.Uuid
+  invoiceId    String            @map("invoice_id") @db.Uuid
+  attemptedAt  DateTime          @default(now()) @map("attempted_at")
+  status       SendAttemptStatus
+  errorMessage String?           @map("error_message")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_send_attempt")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Payments
+// ─────────────────────────────────────────────────────────────────────────
+
+model Payment {
+  id          String   @id @default(uuid()) @db.Uuid
+  invoiceId   String   @map("invoice_id") @db.Uuid
+  amount      Decimal  @db.Decimal(12, 2)
+  paymentDate DateTime @map("payment_date") @db.Date
+  method      String?
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  invoice  Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  reversal PaymentReversal?
+
+  @@index([invoiceId])
+  @@map("payment")
+}
+
+/// Offsetting record for a Payment (DEC-PAY-004). Additive, never a
+/// deletion or edit of the original. One reversal per payment.
+model PaymentReversal {
+  id         String   @id @default(uuid()) @db.Uuid
+  paymentId  String   @unique @map("payment_id") @db.Uuid
+  reversedAt DateTime @default(now()) @map("reversed_at")
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@map("payment_reversal")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tax configuration
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Effective-dated tax settings for one Business. No hard-coded rates or
+/// registration status anywhere in this model (Phase 0 CFG-TAX; Phase 2 §08).
+model TaxConfigurationVersion {
+  id                  String    @id @default(uuid()) @db.Uuid
+  businessId          String    @map("business_id") @db.Uuid
+  effectiveFrom       DateTime  @map("effective_from") @db.Date
+  effectiveTo         DateTime? @map("effective_to") @db.Date
+  isGstHstRegistered  Boolean   @map("is_gst_hst_registered")
+  // Collection of { taxAuthority, taxType, rate, appliesTo }. Rates are
+  // supplied by the business owner — never defaulted by this system.
+  taxLines            Json      @map("tax_lines")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId])
+  @@map("tax_configuration_version")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Google Calendar boundary (persistence only — no sync algorithm)
+// ─────────────────────────────────────────────────────────────────────────
+
+model CalendarConnection {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  businessId            String                    @map("business_id") @db.Uuid
+  provider              String                    @default("google")
+  googleAccountEmail    String?                   @map("google_account_email")
+  // Encrypted at rest (SEC-OAUTH-001). Never returned to the client.
+  accessTokenCiphertext  String?                  @map("access_token_ciphertext")
+  refreshTokenCiphertext String?                  @map("refresh_token_ciphertext")
+  status                CalendarConnectionStatus @default(ACTIVE)
+  connectedAt           DateTime                  @default(now()) @map("connected_at")
+  disconnectedAt        DateTime?                 @map("disconnected_at")
+
+  business          Business           @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  selectedCalendars SelectedCalendar[]
+
+  @@index([businessId])
+  @@map("calendar_connection")
+}
+
+model SelectedCalendar {
+  id                   String   @id @default(uuid()) @db.Uuid
+  calendarConnectionId String   @map("calendar_connection_id") @db.Uuid
+  googleCalendarId     String   @map("google_calendar_id")
+  displayName          String?  @map("display_name")
+  selected             Boolean  @default(true)
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  calendarConnection CalendarConnection @relation(fields: [calendarConnectionId], references: [id], onDelete: Cascade)
+  calendarEvents      CalendarEvent[]
+
+  @@unique([calendarConnectionId, googleCalendarId])
+  @@map("selected_calendar")
+}
+
+/// Read-only retrieval snapshot of a Google Calendar event — evidence, not
+/// a financial fact (Phase 0 critical rule; Phase 2 §12). The system never
+/// writes back to Google.
+model CalendarEvent {
+  id                 String    @id @default(uuid()) @db.Uuid
+  selectedCalendarId String    @map("selected_calendar_id") @db.Uuid
+  sourceEventId      String    @map("source_event_id")
+  title              String?
+  startAt            DateTime? @map("start_at")
+  endAt              DateTime? @map("end_at")
+  description        String?
+  retrievedAt        DateTime  @default(now()) @map("retrieved_at")
+  lastModifiedAt     DateTime? @map("last_modified_at")
+
+  selectedCalendar SelectedCalendar @relation(fields: [selectedCalendarId], references: [id], onDelete: Cascade)
+  workCandidates   WorkCandidate[]
+
+  @@unique([selectedCalendarId, sourceEventId])
+  @@map("calendar_event")
+}
+
+/// Suggested billable work — pre-financial, requires explicit review and
+/// approval before it may back an InvoiceLineItem (Phase 0 critical rule;
+/// Phase 2 §12 review gate).
+model WorkCandidate {
+  id                String                    @id @default(uuid()) @db.Uuid
+  businessId        String                    @map("business_id") @db.Uuid
+  calendarEventId   String                    @map("calendar_event_id") @db.Uuid
+  reviewState       WorkCandidateReviewState @default(PENDING) @map("review_state")
+  clientId          String?                   @map("client_id") @db.Uuid
+  serviceId         String?                   @map("service_id") @db.Uuid
+  editedDescription String?                   @map("edited_description")
+  editedQuantity    Decimal?                  @map("edited_quantity") @db.Decimal(10, 2)
+  // Algorithm UNRESOLVED (Phase 0 CAL-CONF-001 / Phase 2 DEC-ARCH-024) —
+  // this field exists so the review UI has something to render; it must
+  // never be treated as authoritative or as a substitute for user review.
+  matchConfidence   MatchConfidence?          @map("match_confidence")
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  updatedAt         DateTime                  @updatedAt @map("updated_at")
+
+  business      Business          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  calendarEvent CalendarEvent     @relation(fields: [calendarEventId], references: [id], onDelete: Restrict)
+  lineItems     InvoiceLineItem[]
+
+  @@index([businessId])
+  @@index([calendarEventId])
+  @@map("work_candidate")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Audit trail
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Append-only. No application code path may UPDATE or DELETE a row in
+/// this table — enforced additionally at the database level by a trigger
+/// (see the hand-written migration).
+model AuditEvent {
+  id           String         @id @default(uuid()) @db.Uuid
+  businessId   String         @map("business_id") @db.Uuid
+  eventType    AuditEventType @map("event_type")
+  timestamp    DateTime       @default(now())
+  actorUserId  String         @map("actor_user_id") @db.Uuid
+  entityType   String         @map("entity_type")
+  entityId     String         @map("entity_id")
+  priorValues  Json?          @map("prior_values")
+  newValues    Json?          @map("new_values")
+  metadata     Json?
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  actor    User     @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, timestamp])
+  @@index([entityType, entityId])
+  @@map("audit_event")
+}
