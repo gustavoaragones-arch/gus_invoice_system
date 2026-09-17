@@ -172,6 +172,25 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
         ) : null}
       </div>
 
+      {invoice.status === "FINALIZED" || invoice.status === "VOID" ? (
+        <section className="card stack">
+          <div className="page-header" style={{ marginBottom: 0 }}>
+            <div>
+              <h2 style={{ margin: 0 }}>Invoice document</h2>
+              <p>View or download the finalized invoice PDF generated from the frozen billed snapshots.</p>
+            </div>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              <a className="btn btn-secondary" href={`/api/invoices/${invoice.id}/pdf`} target="_blank" rel="noreferrer">
+                View PDF
+              </a>
+              <a className="btn btn-secondary" href={`/api/invoices/${invoice.id}/pdf?download=1`}>
+                Download PDF
+              </a>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {invoice.status === "FINALIZED" ? (
         <section className="card stack">
           <div className="page-header" style={{ marginBottom: 0 }}>
@@ -185,6 +204,7 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
               clientName={billedClient.name}
               destinationEmail={billedClient.contactEmail ?? ""}
               balanceDue={invoice.balanceDue ?? invoice.invoiceTotal?.toString() ?? "0.00"}
+              dueDate={invoice.dueDate ? formatDate(invoice.dueDate) : null}
             />
           </div>
           <DeliveryHistory attempts={invoice.sendAttempts} />

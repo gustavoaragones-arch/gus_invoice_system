@@ -18,6 +18,7 @@ export class DevelopmentEmailProvider implements EmailProvider {
       console.info("[development-email-provider]", {
         to: destination,
         subject: message.subject,
+        attachmentCount: message.attachments?.length ?? 0,
       });
     }
   }

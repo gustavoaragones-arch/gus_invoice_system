@@ -5,6 +5,7 @@ import {
   CalendarProviderRateLimitError,
   CalendarProviderUnavailableError,
 } from "@/server/calendar/calendarProviderErrors";
+import { EmailProviderConfigurationError } from "@/server/delivery/emailConfig";
 import {
   AuthenticationError,
   BusinessAuthorizationError,
@@ -31,7 +32,11 @@ export function toErrorResponse(error: unknown): NextResponse {
   if (error instanceof NotFoundError) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
-  if (error instanceof ValidationError || error instanceof CalendarProviderConfigurationError) {
+  if (
+    error instanceof ValidationError ||
+    error instanceof CalendarProviderConfigurationError ||
+    error instanceof EmailProviderConfigurationError
+  ) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof CalendarProviderAuthError) {

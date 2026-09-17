@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   // Domain/persistence code lives under src/server and must never be
   // pulled into a client bundle. serverExternalPackages keeps Prisma's
   // native engine out of the client compilation graph.
-  serverExternalPackages: ["@prisma/client"],
+  serverExternalPackages: ["@prisma/client", "pdfkit"],
 };
 
 export default nextConfig;

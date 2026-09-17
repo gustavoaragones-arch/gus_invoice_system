@@ -6,6 +6,7 @@ import { getInvoiceBalance } from "./payments";
 import type { BilledBusinessSnapshot, BilledClientSnapshot } from "./invoiceSnapshots";
 import { buildInvoiceEmailContent } from "@/server/delivery/emailContent";
 import { getEmailProvider } from "@/server/delivery/emailProvider";
+import { buildInvoicePdfFilename, generateInvoicePdf } from "@/server/pdf/invoicePdf";
 import { InvalidStateError, NotFoundError, ValidationError } from "./errors";
 
 export interface SendInvoiceInput {
@@ -35,7 +36,7 @@ export async function sendInvoice(tx: Tx, auth: AuthContext, input: SendInvoiceI
 
   const billedClient = invoice.billedClientSnapshot as BilledClientSnapshot | null;
   const billedBusiness = invoice.billedBusinessSnapshot as BilledBusinessSnapshot | null;
-  if (!billedClient || !billedBusiness) {
+  if (!billedClient || !billedBusiness || !invoice.invoiceNumber || !invoice.invoiceDate) {
     throw new ValidationError("Finalized invoice snapshots are required before delivery.");
   }
 
@@ -49,6 +50,20 @@ export async function sendInvoice(tx: Tx, auth: AuthContext, input: SendInvoiceI
     balance,
   });
 
+  const pdfContent = await generateInvoicePdf({
+    invoiceNumber: invoice.invoiceNumber,
+    invoiceDate: invoice.invoiceDate,
+    dueDate: invoice.dueDate,
+    billedClient,
+    billedBusiness,
+    lineItems: invoice.lineItems,
+    taxLines: invoice.taxLines,
+    preTaxSubtotal: invoice.preTaxSubtotal?.toString() ?? "0.00",
+    totalTax: invoice.totalTax?.toString() ?? "0.00",
+    invoiceTotal: invoice.invoiceTotal?.toString() ?? "0.00",
+    balance,
+  });
+
   let status: "SUCCESS" | "FAILURE" = "SUCCESS";
   let errorMessage: string | null = null;
 
@@ -58,6 +73,13 @@ export async function sendInvoice(tx: Tx, auth: AuthContext, input: SendInvoiceI
       subject: emailContent.subject,
       text: emailContent.text,
       html: emailContent.html,
+      attachments: [
+        {
+          filename: buildInvoicePdfFilename(invoice.invoiceNumber),
+          content: pdfContent,
+          contentType: "application/pdf",
+        },
+      ],
     });
   } catch (error) {
     status = "FAILURE";
@@ -82,6 +104,7 @@ export async function sendInvoice(tx: Tx, auth: AuthContext, input: SendInvoiceI
     metadata: {
       destination: destinationEmail,
       provider: getEmailProvider().name,
+      attachmentFilename: buildInvoicePdfFilename(invoice.invoiceNumber),
     },
   });
 

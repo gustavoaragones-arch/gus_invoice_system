@@ -4,7 +4,7 @@ import type { InvoiceBalance } from "@/server/domain/payments";
 import { formatDate, formatMoney } from "@/lib/format";
 
 export interface InvoiceEmailContentInput {
-  invoice: Pick<Invoice, "invoiceNumber" | "invoiceDate" | "invoiceTotal" | "preTaxSubtotal" | "totalTax">;
+  invoice: Pick<Invoice, "invoiceNumber" | "invoiceDate" | "dueDate" | "invoiceTotal">;
   billedClient: BilledClientSnapshot;
   billedBusiness: BilledBusinessSnapshot;
   lineItems: InvoiceLineItem[];
@@ -13,61 +13,48 @@ export interface InvoiceEmailContentInput {
 }
 
 export function buildInvoiceEmailContent(input: InvoiceEmailContentInput) {
-  const businessName = input.billedBusiness.legalName ?? "Your service provider";
+  const businessName = input.billedBusiness.legalName;
   const invoiceNumber = input.invoice.invoiceNumber ?? "—";
-  const invoiceDate = formatDate(input.invoice.invoiceDate);
-  const total = formatMoney(input.invoice.invoiceTotal?.toString() ?? null);
-  const balanceDue = formatMoney(input.balance.balanceDue.toFixed(2));
-
-  const lines = input.lineItems
-    .map(
-      (line) =>
-        `${line.description} — ${line.quantity.toString()} × ${formatMoney(line.unitPrice.toString())} = ${formatMoney(line.lineSubtotal.toString())}`,
-    )
-    .join("\n");
-
-  const taxSummary = input.taxLines.length
-    ? input.taxLines
-        .map((tax) => `${tax.taxType} (${tax.taxAuthority}): ${formatMoney(tax.taxAmount.toString())}`)
-        .join("\n")
-    : "No tax lines recorded.";
+  const clientName = input.billedClient.name;
+  const invoiceDate = input.invoice.invoiceDate ? formatDate(input.invoice.invoiceDate) : null;
+  const dueDate = input.invoice.dueDate ? formatDate(input.invoice.dueDate) : null;
+  const amountDue = formatMoney(input.balance.balanceDue.toFixed(2));
 
   const subject = `Invoice ${invoiceNumber} from ${businessName}`;
 
-  const text = [
-    `Hello ${input.billedClient.name},`,
+  const bodyLines = [
+    `Hello ${clientName},`,
     "",
-    `${businessName} has sent you invoice ${invoiceNumber} dated ${invoiceDate}.`,
+    `Please find attached invoice ${invoiceNumber} from ${businessName}.`,
     "",
-    "Line items:",
-    lines,
-    "",
-    `Subtotal: ${formatMoney(input.invoice.preTaxSubtotal?.toString() ?? null)}`,
-    `Tax: ${formatMoney(input.invoice.totalTax?.toString() ?? null)}`,
-    taxSummary,
-    `Invoice total: ${total}`,
-    `Balance due: ${balanceDue}`,
-    "",
-    "This message contains invoice details only. No payment instructions are included because none are configured in the system.",
-    "",
-    `Regards,`,
-    businessName,
-  ].join("\n");
+  ];
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; color: #1a2332; line-height: 1.5;">
-      <p>Hello ${escapeHtml(input.billedClient.name)},</p>
-      <p><strong>${escapeHtml(businessName)}</strong> has sent you invoice <strong>${escapeHtml(invoiceNumber)}</strong> dated ${escapeHtml(invoiceDate)}.</p>
-      <h3>Line items</h3>
-      <ul>${input.lineItems.map((line) => `<li>${escapeHtml(line.description)} — ${escapeHtml(line.quantity.toString())} × ${escapeHtml(formatMoney(line.unitPrice.toString()))} = ${escapeHtml(formatMoney(line.lineSubtotal.toString()))}</li>`).join("")}</ul>
-      <p><strong>Subtotal:</strong> ${escapeHtml(formatMoney(input.invoice.preTaxSubtotal?.toString() ?? null))}<br/>
-      <strong>Tax:</strong> ${escapeHtml(formatMoney(input.invoice.totalTax?.toString() ?? null))}<br/>
-      <strong>Invoice total:</strong> ${escapeHtml(total)}<br/>
-      <strong>Balance due:</strong> ${escapeHtml(balanceDue)}</p>
-      <p style="color:#5b6777;">This message contains invoice details only. No payment instructions are included because none are configured in the system.</p>
-      <p>Regards,<br/>${escapeHtml(businessName)}</p>
-    </div>
-  `;
+  if (invoiceDate) {
+    bodyLines.push(`Invoice date: ${invoiceDate}`);
+  }
+  bodyLines.push(`Amount due: ${amountDue}`);
+  if (dueDate) {
+    bodyLines.push(`Due date: ${dueDate}`);
+  }
+
+  bodyLines.push("", "Thank you.", "", businessName);
+  const text = bodyLines.join("\n");
+
+  const htmlLines = [
+    `<p>Hello ${escapeHtml(clientName)},</p>`,
+    `<p>Please find attached invoice <strong>${escapeHtml(invoiceNumber)}</strong> from <strong>${escapeHtml(businessName)}</strong>.</p>`,
+  ];
+
+  if (invoiceDate) {
+    htmlLines.push(`<p>Invoice date: ${escapeHtml(invoiceDate)}</p>`);
+  }
+  htmlLines.push(`<p>Amount due: ${escapeHtml(amountDue)}</p>`);
+  if (dueDate) {
+    htmlLines.push(`<p>Due date: ${escapeHtml(dueDate)}</p>`);
+  }
+  htmlLines.push(`<p>Thank you.</p><p>${escapeHtml(businessName)}</p>`);
+
+  const html = `<div style="font-family: Arial, sans-serif; color: #1a2332; line-height: 1.5;">${htmlLines.join("")}</div>`;
 
   return { subject, text, html };
 }
