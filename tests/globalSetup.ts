@@ -29,6 +29,11 @@ const projectRoot = path.resolve(dirname, "..");
  * without RLS having done anything at all.
  */
 export async function setup() {
+  // Calendar OAuth token encryption requires a 32-byte base64 key in tests.
+  if (!process.env.TOKEN_ENCRYPTION_KEY || Buffer.from(process.env.TOKEN_ENCRYPTION_KEY, "base64").length !== 32) {
+    process.env.TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString("base64");
+  }
+
   await startTestDatabase();
 
   process.env.DATABASE_URL = TEST_ADMIN_DATABASE_URL;

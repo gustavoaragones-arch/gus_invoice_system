@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/clients", label: "Clients" },
   { href: "/services", label: "Services" },
   { href: "/invoices", label: "Invoices" },
+  { href: "/calendar", label: "Calendar" },
 ];
 
 export function AppShell({
