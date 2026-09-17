@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
+import { DeliveryHistory } from "@/components/invoices/DeliveryHistory";
 import { InvoiceEditor } from "@/components/invoices/InvoiceEditor";
+import { PaymentHistory } from "@/components/invoices/PaymentHistory";
+import { RecordPaymentDialog } from "@/components/invoices/RecordPaymentDialog";
+import { SendInvoiceDialog } from "@/components/invoices/SendInvoiceDialog";
 import { VoidDialog } from "@/components/invoices/VoidDialog";
 import { CreateReplacementButton } from "@/components/invoices/CreateReplacementButton";
 import { getServerAuthContext } from "@/server/auth/session";
@@ -77,7 +81,11 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
       <div className="page-header">
         <div>
           <h1>Invoice {invoice.invoiceNumber ?? "—"}</h1>
-          <p>Read-only finalized invoice record.</p>
+          <p>
+            {invoice.status === "FINALIZED"
+              ? "Finalized invoice workspace for delivery and payment recording."
+              : "Read-only void invoice record."}
+          </p>
         </div>
         <Badge status={invoice.status} />
       </div>
@@ -122,14 +130,26 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
         </table>
       </div>
 
-      <div className="card invoice-totals">
-        <div><span>Subtotal</span><span>{formatMoney(invoice.preTaxSubtotal?.toString() ?? null)}</span></div>
-        <div><span>Tax</span><span>{formatMoney(invoice.totalTax?.toString() ?? null)}</span></div>
-        <div className="total"><span>Total</span><span>{formatMoney(invoice.invoiceTotal?.toString() ?? null)}</span></div>
-        {invoice.status === "FINALIZED" ? (
-          <div><span>Balance due</span><span>{formatMoney(invoice.balanceDue)}</span></div>
-        ) : null}
-      </div>
+      <section className="card stack">
+        <h2 style={{ margin: 0 }}>Financial summary</h2>
+        <div className="invoice-totals">
+          <div><span>Invoice total</span><span>{formatMoney(invoice.invoiceTotal?.toString() ?? null)}</span></div>
+          <div><span>Subtotal</span><span>{formatMoney(invoice.preTaxSubtotal?.toString() ?? null)}</span></div>
+          <div><span>Tax</span><span>{formatMoney(invoice.totalTax?.toString() ?? null)}</span></div>
+          {invoice.amountCollected !== null ? (
+            <div><span>Amount collected</span><span>{formatMoney(invoice.amountCollected)}</span></div>
+          ) : null}
+          {invoice.balanceDue !== null ? (
+            <div className="total"><span>Balance due</span><span>{formatMoney(invoice.balanceDue)}</span></div>
+          ) : null}
+          {invoice.overpayment && invoice.overpayment !== "0.00" ? (
+            <div><span>Overpayment</span><span>{formatMoney(invoice.overpayment)}</span></div>
+          ) : null}
+          {invoice.paymentStatus ? (
+            <div><span>Payment status</span><span>{invoice.paymentStatus}</span></div>
+          ) : null}
+        </div>
+      </section>
 
       <div className="card stack">
         <div><strong>Invoice date:</strong> {formatDate(invoice.invoiceDate)}</div>
@@ -151,6 +171,46 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
           </div>
         ) : null}
       </div>
+
+      {invoice.status === "FINALIZED" ? (
+        <section className="card stack">
+          <div className="page-header" style={{ marginBottom: 0 }}>
+            <div>
+              <h2 style={{ margin: 0 }}>Delivery</h2>
+              <p>Send this finalized invoice to the client. Each send creates a separate attempt record.</p>
+            </div>
+            <SendInvoiceDialog
+              invoiceId={invoice.id}
+              invoiceNumber={invoice.invoiceNumber ?? "—"}
+              clientName={billedClient.name}
+              destinationEmail={billedClient.contactEmail ?? ""}
+              balanceDue={invoice.balanceDue ?? invoice.invoiceTotal?.toString() ?? "0.00"}
+            />
+          </div>
+          <DeliveryHistory attempts={invoice.sendAttempts} />
+        </section>
+      ) : null}
+
+      <section className="card stack">
+        <div className="page-header" style={{ marginBottom: 0 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Payments</h2>
+            <p>Payment history for this invoice. Reversed payments remain visible.</p>
+          </div>
+          {invoice.status === "FINALIZED" ? (
+            <RecordPaymentDialog
+              invoiceId={invoice.id}
+              invoiceTotal={invoice.invoiceTotal?.toString() ?? "0.00"}
+              balanceDue={invoice.balanceDue ?? invoice.invoiceTotal?.toString() ?? "0.00"}
+            />
+          ) : null}
+        </div>
+        <PaymentHistory
+          invoiceId={invoice.id}
+          payments={invoice.payments}
+          canRecordPayments={invoice.status === "FINALIZED"}
+        />
+      </section>
 
       {invoice.status === "FINALIZED" ? <VoidDialog invoiceId={invoice.id} /> : null}
       {invoice.status === "VOID" && !invoice.replacedBy ? <CreateReplacementButton invoiceId={invoice.id} /> : null}

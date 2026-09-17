@@ -53,6 +53,11 @@ export async function getInvoice(auth: AuthContext, businessId: string, invoiceI
         business: true,
         lineItems: { orderBy: { lineOrder: "asc" } },
         taxLines: true,
+        payments: {
+          include: { reversal: true },
+          orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }],
+        },
+        sendAttempts: { orderBy: { attemptedAt: "desc" } },
         replaces: { select: { id: true, invoiceNumber: true, status: true } },
         replacedBy: { select: { id: true, invoiceNumber: true, status: true } },
       },
@@ -60,12 +65,32 @@ export async function getInvoice(auth: AuthContext, businessId: string, invoiceI
     if (!invoice) throw new NotFoundError("Invoice not found.");
 
     let balanceDue: string | null = null;
-    if (invoice.status === "FINALIZED") {
+    let amountCollected: string | null = null;
+    let overpayment: string | null = null;
+    let paymentStatus: string | null = null;
+
+    if (invoice.status === "FINALIZED" || invoice.status === "VOID") {
       const balance = await getInvoiceBalance(tx, auth, invoice.id);
       balanceDue = balance.balanceDue.toFixed(2);
+      amountCollected = balance.amountPaid.toFixed(2);
+      overpayment = balance.overpayment.toFixed(2);
+      paymentStatus =
+        balance.overpayment.greaterThan(0)
+          ? "Overpaid"
+          : balance.balanceDue.isZero() && balance.amountPaid.greaterThan(0)
+            ? "Paid"
+            : balance.amountPaid.greaterThan(0)
+              ? "Partially Paid"
+              : "Unpaid";
     }
 
-    return { ...invoice, balanceDue };
+    return {
+      ...invoice,
+      balanceDue,
+      amountCollected,
+      overpayment,
+      paymentStatus,
+    };
   });
 }
 
