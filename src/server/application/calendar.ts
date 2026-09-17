@@ -1,8 +1,11 @@
 import type { AuthContext } from "@/server/auth/types";
 import { withAuthorizedTransaction } from "@/server/db/authorizedTransaction";
 import { assertBusinessAccess } from "@/server/domain/businessAuthorization";
+import { getCalendarProviderMode } from "@/server/calendar/googleCalendarConfig";
+import type { CalendarProviderConnectionResult } from "@/server/calendar/types";
 import {
   connectCalendar,
+  connectCalendarFromOAuth,
   disconnectCalendar,
   getActiveCalendarConnection,
 } from "@/server/domain/calendarConnection";
@@ -46,8 +49,20 @@ export async function getCalendarWorkspace(auth: AuthContext, businessId: string
   });
 }
 
+export function getCalendarProviderModeForApp(): "development" | "google" {
+  return getCalendarProviderMode();
+}
+
 export async function connectCalendarForBusiness(auth: AuthContext, businessId: string) {
   return withAuthorizedTransaction(auth, (tx) => connectCalendar(tx, auth, businessId));
+}
+
+export async function connectCalendarFromOAuthForBusiness(
+  auth: AuthContext,
+  businessId: string,
+  providerResult: CalendarProviderConnectionResult,
+) {
+  return withAuthorizedTransaction(auth, (tx) => connectCalendarFromOAuth(tx, auth, businessId, providerResult));
 }
 
 export async function disconnectCalendarForBusiness(

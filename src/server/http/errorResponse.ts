@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import {
+  CalendarProviderAuthError,
+  CalendarProviderConfigurationError,
+  CalendarProviderRateLimitError,
+  CalendarProviderUnavailableError,
+} from "@/server/calendar/calendarProviderErrors";
+import {
   AuthenticationError,
   BusinessAuthorizationError,
   InvalidStateError,
@@ -25,8 +31,17 @@ export function toErrorResponse(error: unknown): NextResponse {
   if (error instanceof NotFoundError) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
-  if (error instanceof ValidationError) {
+  if (error instanceof ValidationError || error instanceof CalendarProviderConfigurationError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof CalendarProviderAuthError) {
+    return NextResponse.json({ error: error.message }, { status: 401 });
+  }
+  if (error instanceof CalendarProviderRateLimitError) {
+    return NextResponse.json({ error: error.message }, { status: 429 });
+  }
+  if (error instanceof CalendarProviderUnavailableError) {
+    return NextResponse.json({ error: error.message }, { status: 503 });
   }
   if (error instanceof InvalidStateError) {
     return NextResponse.json({ error: error.message }, { status: 409 });

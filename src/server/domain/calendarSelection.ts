@@ -2,7 +2,7 @@ import type { Tx } from "@/server/db/authorizedTransaction";
 import type { AuthContext } from "@/server/auth/types";
 import { getCalendarProvider } from "@/server/calendar/calendarProvider";
 import { assertBusinessAccess } from "./businessAuthorization";
-import { getConnectionCredentials } from "./calendarConnection";
+import { withRefreshedCalendarCredentials } from "./calendarCredentials";
 import { NotFoundError } from "./errors";
 
 export async function discoverProviderCalendars(
@@ -11,8 +11,9 @@ export async function discoverProviderCalendars(
   businessId: string,
   connectionId: string,
 ) {
-  const credentials = await getConnectionCredentials(tx, auth, businessId, connectionId);
-  return getCalendarProvider().listCalendars(credentials);
+  return withRefreshedCalendarCredentials(tx, auth, businessId, connectionId, (credentials) =>
+    getCalendarProvider().listCalendars(credentials),
+  );
 }
 
 export interface CalendarSelectionInput {

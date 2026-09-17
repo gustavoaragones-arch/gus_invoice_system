@@ -7,15 +7,21 @@ import { getServerAuthContext } from "@/server/auth/session";
 import { requireSelectedBusiness } from "@/server/application/businessContext";
 import {
   discoverCalendarsForBusiness,
+  getCalendarProviderModeForApp,
   getCalendarWorkspace,
 } from "@/server/application/calendar";
 import { listClients } from "@/server/application/clients";
 import { listServices } from "@/server/application/services";
 import { formatDate } from "@/lib/format";
 
-export default async function CalendarPage() {
+export default async function CalendarPage({
+  searchParams,
+}: {
+  searchParams: { calendarError?: string; calendarConnected?: string };
+}) {
   const auth = await getServerAuthContext();
   const business = await requireSelectedBusiness(auth);
+  const providerMode = getCalendarProviderModeForApp();
   const workspace = await getCalendarWorkspace(auth, business.id);
   const [clients, services] = await Promise.all([
     listClients(auth, business.id),
@@ -37,7 +43,14 @@ export default async function CalendarPage() {
         </div>
       </div>
 
-      <CalendarConnectionPanel connection={workspace.connection} />
+      {searchParams.calendarError ? (
+        <div className="alert alert-error" role="alert">{searchParams.calendarError}</div>
+      ) : null}
+      {searchParams.calendarConnected ? (
+        <div className="alert" role="status">Google Calendar connected successfully.</div>
+      ) : null}
+
+      <CalendarConnectionPanel connection={workspace.connection} providerMode={providerMode} />
 
       {workspace.connection?.status === "ACTIVE" ? (
         <>

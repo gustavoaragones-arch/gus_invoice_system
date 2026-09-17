@@ -3,7 +3,7 @@ import type { AuthContext } from "@/server/auth/types";
 import { getCalendarProvider } from "@/server/calendar/calendarProvider";
 import type { CalendarDateRange } from "@/server/calendar/types";
 import { assertBusinessAccess } from "./businessAuthorization";
-import { getConnectionCredentials } from "./calendarConnection";
+import { withRefreshedCalendarCredentials } from "./calendarCredentials";
 import { NotFoundError, ValidationError } from "./errors";
 
 export interface CalendarSyncResult {
@@ -43,63 +43,64 @@ export async function syncSelectedCalendars(
     throw new ValidationError("Select at least one calendar before synchronizing.");
   }
 
-  const credentials = await getConnectionCredentials(tx, auth, businessId, connection.id);
   const provider = getCalendarProvider();
 
-  let eventsUpserted = 0;
-  let candidatesCreated = 0;
+  return withRefreshedCalendarCredentials(tx, auth, businessId, connection.id, async (credentials) => {
+    let eventsUpserted = 0;
+    let candidatesCreated = 0;
 
-  for (const selectedCalendar of selectedCalendars) {
-    const providerEvents = await provider.listEvents(credentials, selectedCalendar.googleCalendarId, range);
+    for (const selectedCalendar of selectedCalendars) {
+      const providerEvents = await provider.listEvents(credentials, selectedCalendar.googleCalendarId, range);
 
-    for (const providerEvent of providerEvents) {
-      const calendarEvent = await tx.calendarEvent.upsert({
-        where: {
-          selectedCalendarId_sourceEventId: {
+      for (const providerEvent of providerEvents) {
+        const calendarEvent = await tx.calendarEvent.upsert({
+          where: {
+            selectedCalendarId_sourceEventId: {
+              selectedCalendarId: selectedCalendar.id,
+              sourceEventId: providerEvent.sourceEventId,
+            },
+          },
+          create: {
             selectedCalendarId: selectedCalendar.id,
             sourceEventId: providerEvent.sourceEventId,
+            title: providerEvent.title,
+            startAt: providerEvent.startAt,
+            endAt: providerEvent.endAt,
+            description: providerEvent.description,
+            lastModifiedAt: providerEvent.lastModifiedAt,
           },
-        },
-        create: {
-          selectedCalendarId: selectedCalendar.id,
-          sourceEventId: providerEvent.sourceEventId,
-          title: providerEvent.title,
-          startAt: providerEvent.startAt,
-          endAt: providerEvent.endAt,
-          description: providerEvent.description,
-          lastModifiedAt: providerEvent.lastModifiedAt,
-        },
-        update: {
-          title: providerEvent.title,
-          startAt: providerEvent.startAt,
-          endAt: providerEvent.endAt,
-          description: providerEvent.description,
-          retrievedAt: new Date(),
-          lastModifiedAt: providerEvent.lastModifiedAt,
-        },
-      });
-      eventsUpserted += 1;
-
-      const existingCandidate = await tx.workCandidate.findFirst({
-        where: { calendarEventId: calendarEvent.id },
-      });
-      if (!existingCandidate) {
-        await tx.workCandidate.create({
-          data: {
-            businessId,
-            calendarEventId: calendarEvent.id,
-            reviewState: "PENDING",
-            matchConfidence: "UNMATCHED",
+          update: {
+            title: providerEvent.title,
+            startAt: providerEvent.startAt,
+            endAt: providerEvent.endAt,
+            description: providerEvent.description,
+            retrievedAt: new Date(),
+            lastModifiedAt: providerEvent.lastModifiedAt,
           },
         });
-        candidatesCreated += 1;
+        eventsUpserted += 1;
+
+        const existingCandidate = await tx.workCandidate.findFirst({
+          where: { calendarEventId: calendarEvent.id },
+        });
+        if (!existingCandidate) {
+          await tx.workCandidate.create({
+            data: {
+              businessId,
+              calendarEventId: calendarEvent.id,
+              reviewState: "PENDING",
+              matchConfidence: "UNMATCHED",
+            },
+          });
+          candidatesCreated += 1;
+        }
       }
     }
-  }
 
-  return {
-    eventsUpserted,
-    candidatesCreated,
-    selectedCalendarsProcessed: selectedCalendars.length,
-  };
+    return {
+      eventsUpserted,
+      candidatesCreated,
+      selectedCalendarsProcessed: selectedCalendars.length,
+    };
+  });
 }

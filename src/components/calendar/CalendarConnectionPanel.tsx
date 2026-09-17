@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/format";
 
 export function CalendarConnectionPanel({
   connection,
+  providerMode,
 }: {
   connection: {
     id: string;
@@ -14,6 +15,7 @@ export function CalendarConnectionPanel({
     status: "ACTIVE" | "DISCONNECTED";
     connectedAt: Date;
   } | null;
+  providerMode: "development" | "google";
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +47,10 @@ export function CalendarConnectionPanel({
           >
             {pending ? "Disconnecting..." : "Disconnect"}
           </button>
+        ) : providerMode === "google" ? (
+          <a className="btn btn-primary" href="/api/calendar/oauth/start">
+            Connect Google Calendar
+          </a>
         ) : (
           <button
             className="btn btn-primary"
@@ -73,7 +79,9 @@ export function CalendarConnectionPanel({
           <div><strong>Account:</strong> {connection.googleAccountEmail ?? "—"}</div>
           <div><strong>Connected:</strong> {formatDate(connection.connectedAt)}</div>
           <p style={{ color: "var(--text-muted)", marginBottom: 0 }}>
-            Development environments use a non-production calendar provider. Events are simulated and not retrieved from Google unless a production provider is configured.
+            {providerMode === "google"
+              ? "Production Google Calendar integration is enabled. Synchronization retrieves evidence only and never creates invoices automatically."
+              : "Development environments use a non-production calendar provider. Events are simulated and not retrieved from Google unless a production provider is configured."}
           </p>
         </div>
       ) : (
