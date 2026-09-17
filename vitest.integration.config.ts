@@ -13,7 +13,7 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: false,
-    include: ["tests/integration/**/*.test.ts"],
+    include: ["tests/integration/**/*.test.ts", "tests/application/**/*.test.ts"],
     globalSetup: ["tests/globalSetup.ts"],
     // All integration tests share one embedded Postgres instance booted
     // once in globalSetup; run test files sequentially in a single fork
