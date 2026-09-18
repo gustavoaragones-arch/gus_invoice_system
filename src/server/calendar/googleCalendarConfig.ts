@@ -1,3 +1,4 @@
+import { isProduction } from "@/server/config/runtime";
 import { CalendarProviderConfigurationError } from "./calendarProviderErrors";
 
 export const GOOGLE_CALENDAR_SCOPES = [
@@ -13,6 +14,11 @@ export interface GoogleOAuthConfig {
 
 export function getCalendarProviderMode(): "development" | "google" {
   const configured = process.env.CALENDAR_PROVIDER?.trim().toLowerCase();
+  if (isProduction() && configured !== "google") {
+    throw new CalendarProviderConfigurationError(
+      'CALENDAR_PROVIDER must be explicitly set to "google" in production. The development calendar provider is not permitted.',
+    );
+  }
   if (!configured || configured === "development") {
     return "development";
   }

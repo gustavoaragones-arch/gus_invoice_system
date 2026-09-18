@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { BUSINESS_COOKIE } from "@/server/auth/session";
+import { BUSINESS_COOKIE, cookieOptions } from "@/server/auth/session";
 import { requireAuthContext } from "@/server/auth/requireAuth";
 import { withAuthorizedTransaction } from "@/server/db/authorizedTransaction";
 import { assertBusinessAccess } from "@/server/domain/businessAuthorization";
@@ -21,13 +21,7 @@ export async function POST(request: Request) {
     });
 
     const cookieStore = await cookies();
-    cookieStore.set(BUSINESS_COOKIE, body.businessId, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-    });
+    cookieStore.set(BUSINESS_COOKIE, body.businessId, cookieOptions(60 * 60 * 24 * 30));
 
     return NextResponse.json({ ok: true });
   } catch (error) {

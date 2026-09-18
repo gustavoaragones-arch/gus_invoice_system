@@ -38,6 +38,7 @@ export async function sendInvoiceForBusiness(
   destinationEmail: string,
 ) {
   const result = await withAuthorizedTransaction(auth, async (tx) => {
+    await assertBusinessAccess(tx, auth, businessId);
     const invoice = await tx.invoice.findFirst({ where: { id: invoiceId, businessId } });
     if (!invoice) throw new NotFoundError("Invoice not found.");
     return sendInvoice(tx, auth, { invoiceId, destinationEmail });

@@ -1,4 +1,5 @@
 import { jwtVerify } from "jose";
+import { getAuthProviderMode } from "@/server/config/runtime";
 import { AuthenticationError } from "@/server/domain/errors";
 import type { AuthContext } from "./types";
 
@@ -27,6 +28,8 @@ function getJwtSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface SupabaseAccessTokenClaims {
   sub: string;
   email?: string;
@@ -35,12 +38,25 @@ interface SupabaseAccessTokenClaims {
 
 export async function verifySupabaseAccessToken(token: string): Promise<AuthContext> {
   try {
+    // In "supabase" mode (mandatory in production) a token must be a real
+    // Supabase Auth access token: audience "authenticated" and, when
+    // SUPABASE_URL is configured, the matching issuer. Locally-minted
+    // development tokens carry neither, so they are rejected there even
+    // though they share the signing secret.
+    const strict = getAuthProviderMode() === "supabase";
+    const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
+
     const { payload } = await jwtVerify<SupabaseAccessTokenClaims>(token, getJwtSecret(), {
       algorithms: ["HS256"],
+      ...(strict ? { audience: "authenticated" } : {}),
+      ...(strict && supabaseUrl ? { issuer: `${supabaseUrl}/auth/v1` } : {}),
     });
 
     if (!payload.sub) {
       throw new AuthenticationError("Token is missing a subject (user id) claim.");
+    }
+    if (!UUID_PATTERN.test(payload.sub)) {
+      throw new AuthenticationError("Token subject is not a valid user id.");
     }
 
     return {

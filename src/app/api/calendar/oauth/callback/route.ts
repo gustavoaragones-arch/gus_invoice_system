@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { getServerAuthContext } from "@/server/auth/session";
+import { getAppBaseUrl } from "@/server/config/runtime";
 import { assertGoogleCalendarConfigured } from "@/server/calendar/googleCalendarConfig";
 import { exchangeGoogleAuthorizationCode, verifyGoogleOAuthState } from "@/server/calendar/googleOAuth";
 import { connectCalendarFromOAuthForBusiness } from "@/server/application/calendar";
 import { toErrorResponse } from "@/server/http/errorResponse";
 
 function calendarRedirect(path = "/calendar", query?: Record<string, string>) {
-  const url = new URL(path, process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000");
+  const url = new URL(path, getAppBaseUrl());
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       url.searchParams.set(key, value);

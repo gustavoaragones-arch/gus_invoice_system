@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { AuthProviderUnavailableError } from "@/server/auth/supabaseGoTrue";
+import { ProductionConfigurationError } from "@/server/config/runtime";
 import {
   CalendarProviderAuthError,
   CalendarProviderConfigurationError,
@@ -23,6 +25,16 @@ import {
  * echoed to the client; anything else becomes a flat 500 with no detail.
  */
 export function toErrorResponse(error: unknown): NextResponse {
+  if (error instanceof AuthProviderUnavailableError) {
+    return NextResponse.json({ error: error.message }, { status: 503 });
+  }
+  if (isMalformedIdentifierError(error)) {
+    return NextResponse.json({ error: "Invalid identifier." }, { status: 400 });
+  }
+  if (error instanceof ProductionConfigurationError) {
+    logUnexpectedError(error);
+    return NextResponse.json({ error: "Service is not available." }, { status: 503 });
+  }
   if (error instanceof AuthenticationError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
@@ -55,7 +67,33 @@ export function toErrorResponse(error: unknown): NextResponse {
     return NextResponse.json({ error: error.message }, { status: 422 });
   }
 
+  logUnexpectedError(error);
+
   // Deliberately no error detail here — could be anything, including a
   // driver-level message that might reveal schema/internal structure.
   return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+}
+
+/** Prisma P2023: a value (e.g. a non-UUID id) is malformed for its column. */
+export function isMalformedIdentifierError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "P2023"
+  );
+}
+
+/**
+ * Server-side diagnostics for errors that are not safe to show. Production
+ * logs only the error class and code — never the message, which for driver
+ * errors can contain SQL, identifiers or connection details.
+ */
+function logUnexpectedError(error: unknown): void {
+  const name = error instanceof Error ? error.name : "UnknownError";
+  const code = (error as { code?: unknown } | null)?.code;
+  if (process.env.NODE_ENV === "production") {
+    console.error(`[error] ${name}${typeof code === "string" ? ` (${code})` : ""}`);
+  } else {
+    console.error("[error]", error);
+  }
 }

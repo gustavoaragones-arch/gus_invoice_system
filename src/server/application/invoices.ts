@@ -273,6 +273,7 @@ export async function saveDraftLineItems(
   lines: DraftLineItemInput[],
 ) {
   return withAuthorizedTransaction(auth, async (tx) => {
+    await assertBusinessAccess(tx, auth, businessId);
     const invoice = await tx.invoice.findFirst({ where: { id: invoiceId, businessId } });
     if (!invoice) throw new NotFoundError("Invoice not found.");
     return setDraftLineItems(tx, auth, invoiceId, lines);
@@ -286,6 +287,7 @@ export async function finalizeInvoiceForBusiness(
   invoiceDate?: Date,
 ) {
   return withAuthorizedTransaction(auth, async (tx) => {
+    await assertBusinessAccess(tx, auth, businessId);
     const invoice = await tx.invoice.findFirst({ where: { id: invoiceId, businessId } });
     if (!invoice) throw new NotFoundError("Invoice not found.");
     const finalized = await finalizeInvoice(tx, auth, { invoiceId, invoiceDate });
@@ -303,6 +305,7 @@ export async function voidInvoiceForBusiness(
   reason?: string,
 ) {
   return withAuthorizedTransaction(auth, async (tx) => {
+    await assertBusinessAccess(tx, auth, businessId);
     const invoice = await tx.invoice.findFirst({ where: { id: invoiceId, businessId } });
     if (!invoice) throw new NotFoundError("Invoice not found.");
     return voidInvoice(tx, auth, { invoiceId, reason });
@@ -315,6 +318,7 @@ export async function createReplacementDraftForBusiness(
   invoiceId: string,
 ) {
   return withAuthorizedTransaction(auth, async (tx) => {
+    await assertBusinessAccess(tx, auth, businessId);
     const invoice = await tx.invoice.findFirst({ where: { id: invoiceId, businessId } });
     if (!invoice) throw new NotFoundError("Invoice not found.");
     return createReplacementDraft(tx, auth, invoiceId);

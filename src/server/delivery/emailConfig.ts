@@ -1,3 +1,5 @@
+import { isProduction } from "@/server/config/runtime";
+
 export class EmailProviderConfigurationError extends Error {
   constructor(message: string) {
     super(message);
@@ -18,6 +20,11 @@ export interface SmtpEmailConfig {
 
 export function getEmailProviderMode(): EmailProviderMode {
   const configured = process.env.EMAIL_PROVIDER?.trim().toLowerCase();
+  if (isProduction() && configured !== "smtp") {
+    throw new EmailProviderConfigurationError(
+      'EMAIL_PROVIDER must be explicitly set to "smtp" in production. The development email provider is not permitted.',
+    );
+  }
   if (!configured || configured === "development") {
     return "development";
   }

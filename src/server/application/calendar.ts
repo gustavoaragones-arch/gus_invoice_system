@@ -110,6 +110,7 @@ export async function editWorkCandidateForBusiness(
   edits: { clientId?: string; serviceId?: string; editedDescription?: string; editedQuantity?: string },
 ) {
   return withAuthorizedTransaction(auth, async (tx) => {
+    await assertBusinessAccess(tx, auth, businessId);
     const candidate = await tx.workCandidate.findFirst({ where: { id: workCandidateId, businessId } });
     if (!candidate) throw new NotFoundError("Work candidate not found.");
     return editWorkCandidate(tx, auth, workCandidateId, edits);
@@ -122,6 +123,7 @@ export async function rejectWorkCandidateForBusiness(
   workCandidateId: string,
 ) {
   return withAuthorizedTransaction(auth, async (tx) => {
+    await assertBusinessAccess(tx, auth, businessId);
     const candidate = await tx.workCandidate.findFirst({ where: { id: workCandidateId, businessId } });
     if (!candidate) throw new NotFoundError("Work candidate not found.");
     return rejectWorkCandidate(tx, auth, workCandidateId);
@@ -134,6 +136,7 @@ export async function createInvoiceDraftFromWorkCandidate(
   workCandidateId: string,
 ) {
   return withAuthorizedTransaction(auth, async (tx) => {
+    await assertBusinessAccess(tx, auth, businessId);
     const candidate = await tx.workCandidate.findFirst({ where: { id: workCandidateId, businessId } });
     if (!candidate) throw new NotFoundError("Work candidate not found.");
 

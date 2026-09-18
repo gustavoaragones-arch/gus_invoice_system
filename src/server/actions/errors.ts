@@ -1,3 +1,5 @@
+import { AuthProviderUnavailableError } from "@/server/auth/supabaseGoTrue";
+import { isMalformedIdentifierError } from "@/server/http/errorResponse";
 import {
   AuthenticationError,
   BusinessAuthorizationError,
@@ -11,6 +13,9 @@ import {
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export function toActionError(error: unknown): string {
+  if (isMalformedIdentifierError(error)) {
+    return "Invalid identifier.";
+  }
   if (error instanceof UnresolvedTaxApplicabilityError) {
     return error.message;
   }
@@ -22,6 +27,9 @@ export function toActionError(error: unknown): string {
     error instanceof BusinessAuthorizationError ||
     error instanceof DomainError
   ) {
+    return error.message;
+  }
+  if (error instanceof AuthProviderUnavailableError) {
     return error.message;
   }
   return "An unexpected error occurred. Please try again.";

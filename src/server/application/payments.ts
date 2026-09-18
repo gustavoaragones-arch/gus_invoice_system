@@ -59,6 +59,7 @@ export async function recordPaymentForBusiness(
   input: RecordPaymentInput,
 ) {
   return withAuthorizedTransaction(auth, async (tx) => {
+    await assertBusinessAccess(tx, auth, businessId);
     const invoice = await tx.invoice.findFirst({ where: { id: input.invoiceId, businessId } });
     if (!invoice) throw new NotFoundError("Invoice not found.");
     return recordPayment(tx, auth, input);
