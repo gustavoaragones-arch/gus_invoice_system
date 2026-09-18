@@ -21,10 +21,14 @@ export default async function BusinessPage() {
       </div>
 
       <section className="card stack">
-        <h2 style={{ margin: 0 }}>Current business</h2>
+        <h2 style={{ margin: 0 }}>Business administration</h2>
         <p style={{ color: "var(--text-muted)", margin: 0 }}>
           {businesses.length} business profile{businesses.length === 1 ? "" : "es"} available in your account.
         </p>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <Link className="btn btn-secondary" href="/business/tax">Tax configuration</Link>
+          <Link className="btn btn-secondary" href="/reports">Reporting (calendar YTD)</Link>
+        </div>
       </section>
 
       <BusinessForm
