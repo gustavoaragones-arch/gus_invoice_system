@@ -54,8 +54,8 @@ const REQUIRED_PRODUCTION_VARIABLES = [
   "DATABASE_URL",
   "SUPABASE_URL",
   "SUPABASE_ANON_KEY",
-  "SUPABASE_JWT_SECRET",
   "TOKEN_ENCRYPTION_KEY",
+  "GOOGLE_OAUTH_STATE_SECRET",
   "NEXT_PUBLIC_APP_URL",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
@@ -96,9 +96,12 @@ export function assertProductionConfiguration(env: NodeJS.ProcessEnv = process.e
     problems.push("TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes");
   }
 
-  const jwtSecret = env.SUPABASE_JWT_SECRET?.trim();
-  if (jwtSecret && jwtSecret.length < 32) {
-    problems.push("SUPABASE_JWT_SECRET is too short to be a valid Supabase JWT secret");
+  const stateSecret = env.GOOGLE_OAUTH_STATE_SECRET?.trim();
+  if (stateSecret && stateSecret.length < 32) {
+    problems.push("GOOGLE_OAUTH_STATE_SECRET must be at least 32 characters");
+  }
+  if (stateSecret && (stateSecret === key || stateSecret === env.SUPABASE_JWT_SECRET?.trim())) {
+    problems.push("GOOGLE_OAUTH_STATE_SECRET must be a dedicated secret (not reused from another variable)");
   }
 
   const appUrl = env.NEXT_PUBLIC_APP_URL?.trim();

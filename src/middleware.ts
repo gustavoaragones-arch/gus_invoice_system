@@ -2,13 +2,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/server/auth/session";
 import { verifySupabaseAccessToken } from "@/server/auth/supabaseAuth";
+import { AuthProviderUnavailableError } from "@/server/auth/supabaseGoTrue";
 
 const PUBLIC_PATHS = ["/login", "/api/health", "/api/auth/login"];
 
 /**
  * Edge gate for every non-public route. The session token is cryptographically
  * verified here (not merely checked for presence); protected API routes get a
- * 401 JSON response, pages redirect to /login. Handlers and server actions
+ * 401 JSON response, pages redirect to /login. If token verification cannot be
+ * performed because the JWKS provider is unavailable, every request gets 503
+ * and cookies are left alone. Handlers and server actions
  * still authenticate and authorize independently — this is not the only layer.
  */
 export async function middleware(request: NextRequest) {
@@ -26,7 +29,16 @@ export async function middleware(request: NextRequest) {
     try {
       await verifySupabaseAccessToken(credential);
       authenticated = true;
-    } catch {
+    } catch (error) {
+      // The trusted key source (JWKS) or auth configuration is unavailable:
+      // the token was not judged. Answer 503 and leave the session cookie
+      // untouched — never treat it as an invalid session.
+      if (error instanceof AuthProviderUnavailableError) {
+        return NextResponse.json(
+          { error: "The authentication service is unavailable." },
+          { status: 503, headers: { "Retry-After": "30" } },
+        );
+      }
       authenticated = false;
     }
   }

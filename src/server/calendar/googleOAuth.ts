@@ -6,10 +6,18 @@ import type { CalendarProviderConnectionResult } from "./types";
 
 const OAUTH_STATE_MAX_AGE = "10m";
 
+const MIN_STATE_SECRET_LENGTH = 32;
+
+/**
+ * Dedicated secret for signing the OAuth `state` parameter. Used for nothing
+ * else: it is not derived from, and must not equal, any other secret.
+ */
 function getStateSecret(): Uint8Array {
-  const secret = process.env.SUPABASE_JWT_SECRET;
-  if (!secret) {
-    throw new CalendarProviderConfigurationError("SUPABASE_JWT_SECRET is not configured.");
+  const secret = process.env.GOOGLE_OAUTH_STATE_SECRET?.trim();
+  if (!secret || secret.length < MIN_STATE_SECRET_LENGTH) {
+    throw new CalendarProviderConfigurationError(
+      `GOOGLE_OAUTH_STATE_SECRET must be set to at least ${MIN_STATE_SECRET_LENGTH} characters.`,
+    );
   }
   return new TextEncoder().encode(secret);
 }
@@ -31,7 +39,7 @@ export async function createGoogleOAuthState(input: { userId: string; businessId
 }
 
 export async function verifyGoogleOAuthState(state: string): Promise<{ userId: string; businessId: string }> {
-  const { payload } = await jwtVerify(state, getStateSecret());
+  const { payload } = await jwtVerify(state, getStateSecret(), { algorithms: ["HS256"] });
   const userId = payload.sub;
   const businessId = payload.businessId;
 

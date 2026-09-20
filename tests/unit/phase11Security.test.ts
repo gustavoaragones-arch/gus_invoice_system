@@ -35,9 +35,9 @@ const productionEnv = {
   DATABASE_URL: "postgresql://x",
   SUPABASE_URL: "https://project.supabase.co",
   SUPABASE_ANON_KEY: "anon",
-  SUPABASE_JWT_SECRET: SECRET,
   TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
   NEXT_PUBLIC_APP_URL: "https://billing.example.test",
+  GOOGLE_OAUTH_STATE_SECRET: "state-secret-for-unit-tests-0123456789abcdef",
   GOOGLE_CLIENT_ID: "id",
   GOOGLE_CLIENT_SECRET: "secret-google-value",
   GOOGLE_OAUTH_REDIRECT_URI: "https://billing.example.test/api/calendar/oauth/callback",
@@ -95,7 +95,7 @@ describe("production authentication never falls back to development", () => {
     await expect(createSessionToken(USER_ID, "a@example.test")).rejects.toBeInstanceOf(AuthenticationError);
   });
 
-  it("supabase mode rejects locally-minted tokens that lack the Supabase audience/issuer", async () => {
+  it("supabase mode rejects every HS256 token — including one shaped exactly like a Supabase token — without any shared-secret fallback", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("AUTH_PROVIDER", "supabase");
     vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
@@ -103,16 +103,13 @@ describe("production authentication never falls back to development", () => {
     const devStyle = await sign({ sub: USER_ID, email: "a@example.test" });
     await expect(verifySupabaseAccessToken(devStyle)).rejects.toBeInstanceOf(AuthenticationError);
 
-    const wrongIssuer = await sign({ sub: USER_ID, aud: "authenticated", iss: "https://evil.example/auth/v1" });
-    await expect(verifySupabaseAccessToken(wrongIssuer)).rejects.toBeInstanceOf(AuthenticationError);
-
-    const real = await sign({
+    const shapedLikeSupabase = await sign({
       sub: USER_ID,
       email: "a@example.test",
       aud: "authenticated",
       iss: "https://project.supabase.co/auth/v1",
     });
-    await expect(verifySupabaseAccessToken(real)).resolves.toEqual({ userId: USER_ID, email: "a@example.test" });
+    await expect(verifySupabaseAccessToken(shapedLikeSupabase)).rejects.toBeInstanceOf(AuthenticationError);
   });
 
   it("rejects wrong-secret, expired and non-UUID-subject tokens", async () => {
@@ -169,7 +166,7 @@ describe("production configuration validation", () => {
       ...productionEnv,
       AUTH_PROVIDER: "development",
       EMAIL_PROVIDER: "development",
-      SUPABASE_JWT_SECRET: "zq9-tiny-secret",
+      GOOGLE_OAUTH_STATE_SECRET: "zq9-tiny-secret",
       SMTP_PASSWORD: "",
       NEXT_PUBLIC_APP_URL: "http://insecure.example",
     } as unknown as NodeJS.ProcessEnv;
